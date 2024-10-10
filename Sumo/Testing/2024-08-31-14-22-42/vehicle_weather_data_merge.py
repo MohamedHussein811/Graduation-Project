@@ -16,7 +16,6 @@ start_time = time.time()
 def find_nearest_weather_kdtree(veh_coords, weather_data, weather_tree):
     vehicle_gps = (veh_coords[1], veh_coords[0])
     
-    # Query the KDTree to find the index of the nearest weather station
     distance, idx = weather_tree.query([vehicle_gps[0], vehicle_gps[1]])
     
     nearest_weather = weather_data.iloc[idx]

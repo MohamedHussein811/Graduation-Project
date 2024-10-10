@@ -57,32 +57,25 @@ else:
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    # Autoencoder Model
     input_dim = X_train.shape[1]
-    encoding_dim = 8  # Dimensionality of the latent space (compressed representation)
+    encoding_dim = 8
 
-    # Encoder
     input_layer = Input(shape=(input_dim,))
     encoded = Dense(64, activation='relu')(input_layer)
     encoded = Dense(32, activation='relu')(encoded)
     encoded_output = Dense(encoding_dim, activation='relu')(encoded)
 
-    # Decoder
     decoded = Dense(32, activation='relu')(encoded_output)
     decoded = Dense(64, activation='relu')(decoded)
     decoded_output = Dense(input_dim, activation='sigmoid')(decoded)
 
-    # Autoencoder Model
     autoencoder = Model(input_layer, decoded_output)
     autoencoder.compile(optimizer='adam', loss='mse')
 
-    # Training the Autoencoder
     autoencoder.fit(X_train, X_train, epochs=50, batch_size=32, validation_split=0.2, verbose=1)
 
-    # Encoder Model for feature extraction
     encoder = Model(inputs=input_layer, outputs=encoded_output)
 
-    # Extract compressed features
     X_train_encoded = encoder.predict(X_train)
     X_test_encoded = encoder.predict(X_test)
 
