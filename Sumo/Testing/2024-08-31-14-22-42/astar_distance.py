@@ -6,6 +6,8 @@ from heapq import heappop, heappush
 import sumolib
 import xml.etree.ElementTree as ET
 
+weatherDataFile = "WeatherData/weather_data.csv"
+
 def getdatetime():
     utc_now = pytz.utc.localize(datetime.datetime.utcnow())
     currentDT = utc_now.astimezone(pytz.timezone("Asia/Singapore"))
@@ -22,69 +24,45 @@ def flatten_list(_2d_list):
             flat_list.append(element)
     return flat_list
 
-def get_traffic_penalty(edge_id):
+def heuristic(node, goal):
     """
-    Calculate the traffic penalty based on the traffic density on the road segment (edge).
-    The more vehicles on the road, the higher the penalty.
-    """
-    try:
-        traffic_density = traci.edge.getLastStepVehicleNumber(edge_id)
-
-        if traffic_density > 100: 
-            return (traffic_density - 100) * 0.1 
-        else:
-            return 0
-    except Exception as e:
-        print(f"Error getting traffic data for edge {edge_id}: {e}")
-        return 0
-
-def heuristic(node):
-    """
-    Calculate the heuristic by the traffic data.
+    Calculate the Euclidean distance between two nodes.
     """
     try:
-        traffic_penalty = 0
-        for edge in node.getOutgoing():
-            traffic_penalty += get_traffic_penalty(edge.getID())
-        
-        return traffic_penalty
+        return sumolib.geomhelper.distance(node.getCoord(), goal.getCoord())
     except Exception as e:
         print(f"Error calculating heuristic: {e}")
         return float('inf')
 
-
 def astar_search(start, goal, net):
     """
     A* Search algorithm for finding the shortest path between two nodes in the SUMO network.
-    Includes traffic and weather information in the heuristic.
     """
     frontier = []
-    heappush(frontier, (0, start.getID()))
+    heappush(frontier, (0, start.getID())) 
     came_from = {}
     cost_so_far = {}
     came_from[start.getID()] = None
     cost_so_far[start.getID()] = 0
 
     while frontier:
-        current_id = heappop(frontier)[1] 
+        current_id = heappop(frontier)[1]
         current_node = net.getNode(current_id)
 
         if current_node == goal:
             break
 
-        # Explore neighbors (outgoing edges)
         for edge in current_node.getOutgoing():
             next_node = edge.getToNode()
             new_cost = cost_so_far[current_node.getID()] + edge.getLength()
 
             if next_node.getID() not in cost_so_far or new_cost < cost_so_far[next_node.getID()]:
                 cost_so_far[next_node.getID()] = new_cost
-                priority = new_cost + heuristic(next_node)
+                priority = new_cost + heuristic(next_node, goal)
                 heappush(frontier, (priority, next_node.getID()))
                 came_from[next_node.getID()] = current_node.getID()
 
     return came_from, cost_so_far
-
 
 def reconstruct_path(came_from, start_id, goal_id):
     """
@@ -181,7 +159,6 @@ while traci.simulation.getMinExpectedNumber() > 0:
             turnAngle = round(traci.vehicle.getAngle(vehid), 2)
             nextTLS = traci.vehicle.getNextTLS(vehid)
             
-            # Assign goals and set path for vehicles
             if vehid in vehicle_stops:
                 stops = vehicle_stops[vehid]
                 if stops:
@@ -256,7 +233,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
         person_speed = traci.person.getSpeed(person_id)
         person_vehicle = traci.person.getVehicle(person_id)
 
-        # Check if the person is boarding a bus
+        # Check if the person i boarding a bus
         if person_id not in personState:
             personState[person_id] = {"status": "walking", "vehicle": "", "last_edge": person_edge}
 
@@ -302,7 +279,7 @@ vehicle_columns = [
 person_columns = ['dateandtime', 'person_id', 'position', 'current_edge', 'speed', 'vehicle', 'activity']
 
 dataset = pd.DataFrame(packBigData, columns=vehicle_columns)
-dataset.to_csv('SumoData/vehicle_data_astar_traffic.csv', index=False)
+dataset.to_csv('SumoData/vehicle_data_astar_distance.csv', index=False)
 
 person_dataset = pd.DataFrame(packPersonData, index=None, columns=person_columns)
-person_dataset.to_csv('SumoData/person_data_astar_traffic.csv', index=False)
+person_dataset.to_csv('SumoData/person_data_astar_distance.csv', index=False)

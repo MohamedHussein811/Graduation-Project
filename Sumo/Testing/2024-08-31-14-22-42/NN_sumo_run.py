@@ -2,9 +2,18 @@ import traci
 import pytz
 import datetime
 import pandas as pd
-from heapq import heappop, heappush
 import sumolib
 import xml.etree.ElementTree as ET
+import numpy as np
+from tensorflow.keras.models import load_model
+
+MODEL_NAME = 'optimized'
+MODEL_FILE = f'Models/exit_edge_{MODEL_NAME}.h5'
+SIMULATION_OUTPUT_FILE = f'ML_Datasets/Output/simulation_output_{MODEL_NAME}.csv'
+weatherDataFile = "WeatherData/weather_data.csv"
+weather_df = pd.read_csv(weatherDataFile)
+
+model = load_model(MODEL_FILE)
 
 def getdatetime():
     utc_now = pytz.utc.localize(datetime.datetime.utcnow())
@@ -23,17 +32,10 @@ def flatten_list(_2d_list):
     return flat_list
 
 def get_weather_penalty(node_coord, weather_df):
-    """
-    Calculate the weather penalty based on the temperature at the node's location.
-    The penalty could increase if the temperature is extreme.
-    """
     lat, lon = node_coord[1], node_coord[0]
-    
     weather_df['distance'] = ((weather_df['Latitude'] - lat)**2 + (weather_df['Longitude'] - lon)**2)**0.5
     nearest_weather = weather_df.loc[weather_df['distance'].idxmin()]
-    
     temperature = nearest_weather['Temperature']
-    
     if temperature > 30: 
         return (temperature - 30) * 0.1 
     elif temperature < 0:
@@ -42,13 +44,8 @@ def get_weather_penalty(node_coord, weather_df):
         return 0
 
 def get_traffic_penalty(edge_id):
-    """
-    Calculate the traffic penalty based on the traffic density on the road segment (edge).
-    The more vehicles on the road, the higher the penalty.
-    """
     try:
         traffic_density = traci.edge.getLastStepVehicleNumber(edge_id)
-
         if traffic_density > 100: 
             return (traffic_density - 100) * 0.1 
         else:
@@ -57,54 +54,24 @@ def get_traffic_penalty(edge_id):
         print(f"Error getting traffic data for edge {edge_id}: {e}")
         return 0
 
-def heuristic():
-    """
-    A* Standard without heuristic.
-    """
-    return 0
+def predict_path_features(current_edge, goal_edge, weather_df):
+    features = {
+        "current_edge": current_edge.getID(),
+        "goal_edge": goal_edge.getID(),
+        "weather": get_weather_penalty(current_edge.getCoord(), weather_df),
+        "traffic": get_traffic_penalty(current_edge.getID()),
+    }
+    
+    feature_vector = np.array([
+        features['current_edge'],
+        features['goal_edge'],
+        features['weather'],
+        features['traffic'],
+    ]).reshape(1, -1)
 
-
-def astar_search(start, goal, net):
-    frontier = []
-    # Priority is based only on cost, not heuristic
-    heappush(frontier, (0, start.getID()))  
-    came_from = {}
-    cost_so_far = {}
-    came_from[start.getID()] = None
-    cost_so_far[start.getID()] = 0
-
-    while frontier:
-        current = net.getEdge(heappop(frontier)[1])
-
-        if current == goal:
-            break
-
-        for next_edge in current.getOutgoing():
-            next_node = next_edge.getToNode()
-            new_cost = cost_so_far[current.getID()] + current.getLength()  # No heuristic part
-            if next_node.getID() not in cost_so_far or new_cost < cost_so_far[next_node.getID()]:
-                cost_so_far[next_node.getID()] = new_cost
-                # Push the new cost without adding heuristic value
-                heappush(frontier, (new_cost, next_edge.getID()))  
-                came_from[next_edge.getID()] = current.getID()
-
-    return came_from, cost_so_far
-
-
-def reconstruct_path(came_from, start_id, goal_id):
-    """
-    Reconstruct the path from start to goal based on the came_from map.
-    """
-    current = goal_id
-    path = []
-    while current != start_id:
-        path.append(current)
-        current = came_from.get(current)
-        if current is None:
-            break
-    path.append(start_id)
-    path.reverse()
-    return path
+    # Predict using the model
+    predicted_path = model.predict(feature_vector)
+    return predicted_path
 
 def get_exit_direction(angle):
     if 45 <= angle < 135:
@@ -115,17 +82,6 @@ def get_exit_direction(angle):
         return "Left"
     else:
         return "Straight"
-
-def validate_lane_and_edge(lane, net):
-    try:
-        if lane and net.getLane(lane):
-            return net.getLane(lane).getEdge().getID()
-        else:
-            print(f"Invalid lane: {lane}")
-            return None
-    except Exception as e:
-        print(f"Validation error for lane {lane}: {e}")
-        return None
 
 vehicle_stops = {}
 try:
@@ -155,7 +111,6 @@ sumoCmd = ["sumo", "-c", "Sumo_Config/osm.sumocfg", "--routing-algorithm", "asta
 traci.start(sumoCmd)
 
 packBigData = []
-
 junction_edges = set()
 edge_junction_map = {}
 packPersonData = []
@@ -196,23 +151,24 @@ while traci.simulation.getMinExpectedNumber() > 0:
                         current_lane = bus_stops[current_stop]
                         goal_lane = bus_stops[next_stop]
                         
-                        current_edge_id = validate_lane_and_edge(current_lane, net)
-                        goal_edge_id = validate_lane_and_edge(goal_lane, net)
+                        current_edge_id = current_lane
+                        goal_edge_id = goal_lane
                         
                         if current_edge_id and goal_edge_id:
                             current_edge = net.getEdge(current_edge_id)
                             goal_edge = net.getEdge(goal_edge_id)
-                            came_from, cost_so_far = astar_search(current_edge, goal_edge, net)
-                            path = reconstruct_path(came_from, current_edge.getID(), goal_edge.getID())
 
-                            # Check entire path is valid before setting route
-                            valid_path = all(net.getEdge(edge_id) for edge_id in path)
+                            # Use the model to predict the path
+                            predicted_path = predict_path_features(current_edge, goal_edge, weather_df)
+
+                            # Check if the predicted path is valid
+                            valid_path = all(net.getEdge(edge_id) for edge_id in predicted_path)
 
                             if valid_path:
-                                traci.vehicle.setRoute(vehid, path)
+                                traci.vehicle.setRoute(vehid, predicted_path)
                                 traci.vehicle.resume(vehid)
                             else:
-                                print(f"Invalid path for vehicle {vehid}: {path}")
+                                print(f"Invalid path for vehicle {vehid}: {predicted_path}")
                         else:
                             print(f"Invalid lanes for vehicle {vehid}: {current_lane}, {goal_lane}")
                         
@@ -270,44 +226,23 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
         # Boarding a bus
         if person_vehicle and current_status == "walking":
-            personState[person_id] = {"status": "on_veh", "vehicle": person_vehicle, "last_edge": person_edge}
-            packPersonData.append([
-                getdatetime(), person_id, person_pos, person_edge, person_speed, person_vehicle, "Boarded Bus"
-            ])
-            print(f"Person {person_id} boarded {person_vehicle} at {getdatetime()} on edge {person_edge}.")
+            personState[person_id]["status"] = "boarding"
+            personState[person_id]["vehicle"] = person_vehicle
+            print(f"Person {person_id} boarding vehicle {person_vehicle}")
 
-        # Alighting a bus
-        elif not person_vehicle and current_status == "on_veh":
-            personState[person_id] = {"status": "walking", "vehicle": "", "last_edge": person_edge}
-            packPersonData.append([
-                getdatetime(), person_id, person_pos, person_edge, person_speed, last_vehicle, "Alighted Bus"
-            ])
-            print(f"Person {person_id} alighted {last_vehicle} at {getdatetime()} on edge {person_edge}.")
+        # Exiting the bus
+        if last_vehicle and person_vehicle is None:
+            personState[person_id]["status"] = "walking"
+            personState[person_id]["vehicle"] = ""
+            print(f"Person {person_id} exited vehicle {last_vehicle}")
 
-        # Update status based on speed
-        if person_speed == 0:
-            if current_status == "walking":
-                current_status = "waiting"
-            else:
-                if current_status == "waiting":
-                    current_status = "walking"
-
-        packPersonData.append([
-            getdatetime(), person_id, person_pos, person_edge, person_speed, person_vehicle, current_status
-        ])
-
-traci.close()
-
-vehicle_columns = [
-    'dateandtime', 'vehid', 'coord', 'gpscoord', 'spd', 'edge', 'lane',
+# Save the collected data
+data_df = pd.DataFrame(packBigData, columns=['dateandtime', 'vehid', 'coord', 'gpscoord', 'spd', 'edge', 'lane',
     'displacement', 'turnAngle', 'nextTLS', 'junction_id', 'exit_edge', 'exit_angle', 'exit_direction',
     'tflight', 'tl_state', 'tl_phase_duration', 'tl_lanes_controlled',
-    'tl_program', 'tl_next_switch'
-]
-person_columns = ['dateandtime', 'person_id', 'position', 'current_edge', 'speed', 'vehicle', 'activity']
+    'tl_program', 'tl_next_switch'])
 
-dataset = pd.DataFrame(packBigData, columns=vehicle_columns)
-dataset.to_csv('SumoData/vehicle_data_astar_standard.csv', index=False)
 
-person_dataset = pd.DataFrame(packPersonData, index=None, columns=person_columns)
-person_dataset.to_csv('SumoData/person_data_astar_standard.csv', index=False)
+data_df.to_csv(SIMULATION_OUTPUT_FILE, index=False)
+
+traci.close()

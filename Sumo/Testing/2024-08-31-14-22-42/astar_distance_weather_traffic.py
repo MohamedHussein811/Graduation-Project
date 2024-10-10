@@ -16,7 +16,6 @@ WeatherData:
 weatherDataFile = "WeatherData/weather_data.csv"
 weather_df = pd.read_csv(weatherDataFile)
 
-
 def getdatetime():
     utc_now = pytz.utc.localize(datetime.datetime.utcnow())
     currentDT = utc_now.astimezone(pytz.timezone("Asia/Singapore"))

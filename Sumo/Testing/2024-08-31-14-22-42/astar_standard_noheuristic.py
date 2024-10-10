@@ -6,8 +6,6 @@ from heapq import heappop, heappush
 import sumolib
 import xml.etree.ElementTree as ET
 
-weatherDataFile = "WeatherData/weather_data.csv"
-
 def getdatetime():
     utc_now = pytz.utc.localize(datetime.datetime.utcnow())
     currentDT = utc_now.astimezone(pytz.timezone("Asia/Singapore"))
@@ -24,46 +22,32 @@ def flatten_list(_2d_list):
             flat_list.append(element)
     return flat_list
 
-def heuristic(node, goal):
-    """
-    Calculate the Euclidean distance between two nodes.
-    """
-
-    try:
-        return sumolib.geomhelper.distance(node.getCoord(), goal.getCoord())
-    except Exception as e:
-        print(f"Error calculating heuristic: {e}")
-        return float('inf')
-
 def astar_search(start, goal, net):
-    """
-    A* Search algorithm for finding the shortest path between two nodes in the SUMO network.
-    """
     frontier = []
-    heappush(frontier, (0, start.getID())) 
+    # Priority is based only on cost, not heuristic
+    heappush(frontier, (0, start.getID()))  
     came_from = {}
     cost_so_far = {}
     came_from[start.getID()] = None
     cost_so_far[start.getID()] = 0
 
     while frontier:
-        current_id = heappop(frontier)[1]
-        current_node = net.getNode(current_id)
+        current = net.getEdge(heappop(frontier)[1])
 
-        if current_node == goal:
+        if current == goal:
             break
 
-        for edge in current_node.getOutgoing():
-            next_node = edge.getToNode()
-            new_cost = cost_so_far[current_node.getID()] + edge.getLength()
-
+        for next_edge in current.getOutgoing():
+            next_node = next_edge.getToNode()
+            new_cost = cost_so_far[current.getID()] + current.getLength()  # No heuristic part
             if next_node.getID() not in cost_so_far or new_cost < cost_so_far[next_node.getID()]:
                 cost_so_far[next_node.getID()] = new_cost
-                priority = new_cost + heuristic(next_node, goal)
-                heappush(frontier, (priority, next_node.getID()))
-                came_from[next_node.getID()] = current_node.getID()
+                # Push the new cost without adding heuristic value
+                heappush(frontier, (new_cost, next_edge.getID()))  
+                came_from[next_edge.getID()] = current.getID()
 
     return came_from, cost_so_far
+
 
 def reconstruct_path(came_from, start_id, goal_id):
     """
@@ -160,6 +144,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
             turnAngle = round(traci.vehicle.getAngle(vehid), 2)
             nextTLS = traci.vehicle.getNextTLS(vehid)
             
+            # Assign goals and set path for vehicles
             if vehid in vehicle_stops:
                 stops = vehicle_stops[vehid]
                 if stops:
@@ -234,7 +219,7 @@ while traci.simulation.getMinExpectedNumber() > 0:
         person_speed = traci.person.getSpeed(person_id)
         person_vehicle = traci.person.getVehicle(person_id)
 
-        # Check if the person i boarding a bus
+        # Check if the person is boarding a bus
         if person_id not in personState:
             personState[person_id] = {"status": "walking", "vehicle": "", "last_edge": person_edge}
 
@@ -280,7 +265,7 @@ vehicle_columns = [
 person_columns = ['dateandtime', 'person_id', 'position', 'current_edge', 'speed', 'vehicle', 'activity']
 
 dataset = pd.DataFrame(packBigData, columns=vehicle_columns)
-dataset.to_csv('SumoData/vehicle_data_astar_v2_distance.csv', index=False)
+dataset.to_csv('SumoData/vehicle_data_astar_standard.csv', index=False)
 
 person_dataset = pd.DataFrame(packPersonData, index=None, columns=person_columns)
-person_dataset.to_csv('SumoData/person_data_astar_v2_distance.csv', index=False)
+person_dataset.to_csv('SumoData/person_data_astar_standard.csv', index=False)
