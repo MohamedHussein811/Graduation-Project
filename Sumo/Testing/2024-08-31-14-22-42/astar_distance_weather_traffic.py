@@ -63,9 +63,6 @@ def get_traffic_penalty(edge_id):
             return (traffic_density - 100) * 0.1 
         else:
             return 0
-        
-        
-        
     except Exception as e:
         print(f"Error getting traffic data for edge {edge_id}: {e}")
         return 0

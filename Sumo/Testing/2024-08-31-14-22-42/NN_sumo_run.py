@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from tensorflow.keras.models import load_model
 
-MODEL_NAME = 'optimized'
+MODEL_NAME = 'gru'
 MODEL_FILE = f'Models/exit_edge_{MODEL_NAME}.h5'
 SIMULATION_OUTPUT_FILE = f'ML_Datasets/Output/simulation_output_{MODEL_NAME}.csv'
 weatherDataFile = "WeatherData/weather_data.csv"

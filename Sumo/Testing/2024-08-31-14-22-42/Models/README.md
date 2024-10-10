@@ -27,6 +27,17 @@ With Neural Networks:
             End: 12:19:33 AM
             Time Difference: 1 hour, 43 minutes, and 58 seconds
 
+    exit_edge_gru
+        Model: GRU
+        Epochs: 15
+        Accuracy: 0.9803784029726246
+        Precision: 0.9706014383383534
+        F1 Score: 0.9746607227093196
+        Time Taken in simulation:
+            Start: 10:35:34 PM
+            End: 12:22:1 AM
+            Time Difference: 1 hour, 46 minutes, and 10 seconds
+
     exit_edge_autoencoder:
         Model: AutoEncoder
         Epochs: 15
