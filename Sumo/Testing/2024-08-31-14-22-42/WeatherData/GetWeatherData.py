@@ -4,7 +4,7 @@ import time
 
 coords = []
 output_csv = "WeatherData/weather_data.csv"
-
+sub_key = "S9ofosom0MBJA2SEL_eeEDFxrT5FkiCJD-9dGKk5eGI"
 def extractData(data):
     try:
         result = data["results"][0]
@@ -76,9 +76,7 @@ with open(output_csv, "w", newline='') as csvfile:
     ]
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
-
-    # Get Weather Data
-    sub_key = "S9ofosom0MBJA2SEL_eeEDFxrT5FkiCJD-9dGKk5eGI"
+    
     for lat, lon in coords:
         url = f"https://atlas.microsoft.com/weather/currentConditions/json?api-version=1.1&query={lat},{lon}&subscription-key={sub_key}"
         print(f"Processing data for {lat}, {lon}...")
